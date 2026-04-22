@@ -122,7 +122,7 @@ jobs:
       - name: Enforce coverage threshold (80%)
         run: |
           cargo llvm-cov report --fail-under-lines 80
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v6
         with:
           files: lcov.info
           fail_ci_if_error: false
