@@ -1,0 +1,196 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run (skip crates.io publish + GitHub release)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Pre-release verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo nextest run --workspace --all-features --locked
+      - name: Verify tag matches cargo-diff-risk version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          CRATE_VER=$(cargo metadata --format-version=1 --no-deps \
+            | jq -r '.packages[] | select(.name=="cargo-diff-risk") | .version')
+          if [[ "$TAG" != "$CRATE_VER" ]]; then
+            echo "::error::Tag $TAG does not match cargo-diff-risk version $CRATE_VER"
+            exit 1
+          fi
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            cross: false
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            cross: false
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            cross: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build release binary
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross build --release --locked --target ${{ matrix.target }} \
+              --bin cargo-diff-risk
+          else
+            cargo build --release --locked --target ${{ matrix.target }} \
+              --bin cargo-diff-risk
+          fi
+
+      - name: Package archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME="cargo-diff-risk-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p "dist/$NAME"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "target/${{ matrix.target }}/release/cargo-diff-risk.exe" "dist/$NAME/"
+            cp README.md LICENSE-MIT LICENSE-APACHE "dist/$NAME/" 2>/dev/null || true
+            (cd dist && 7z a "$NAME.zip" "$NAME")
+            echo "ARTIFACT=dist/$NAME.zip" >> "$GITHUB_ENV"
+          else
+            cp "target/${{ matrix.target }}/release/cargo-diff-risk" "dist/$NAME/"
+            cp README.md LICENSE-MIT LICENSE-APACHE "dist/$NAME/" 2>/dev/null || true
+            (cd dist && tar -czf "$NAME.tar.gz" "$NAME")
+            echo "ARTIFACT=dist/$NAME.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generate SHA-256
+        shell: bash
+        run: |
+          cd dist
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$(basename "$ARTIFACT")" > "$(basename "$ARTIFACT").sha256"
+          else
+            shasum -a 256 "$(basename "$ARTIFACT")" > "$(basename "$ARTIFACT").sha256"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          retention-days: 7
+
+  github-release:
+    name: GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref, '-') }}
+
+  crates-io:
+    name: Publish to crates.io
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run && !contains(github.ref, '-')
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Publish workspace crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Order matches §6 dependency graph: core → parser/rules → scoring → report → git → bin
+          for crate in \
+            diff-risk-core \
+            diff-risk-parser \
+            diff-risk-rules \
+            diff-risk-scoring \
+            diff-risk-report \
+            diff-risk-git \
+            cargo-diff-risk
+          do
+            echo "::group::publish $crate"
+            cargo publish -p "$crate" --locked
+            # Give the index time to update before the next dependent crate
+            sleep 20
+            echo "::endgroup::"
+          done

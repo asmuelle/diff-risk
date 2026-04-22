@@ -1,0 +1,110 @@
+name: Dogfood (cargo-diff-risk on itself)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: "Risk threshold (exit-code 1 above this)"
+        required: false
+        default: "7"
+
+concurrency:
+  group: dogfood-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+permissions:
+  contents: read
+  pull-requests: write      # PR comment with report
+  security-events: write    # SARIF upload → GitHub Code Scanning
+
+jobs:
+  risk:
+    name: Score PR diff
+    runs-on: ubuntu-latest
+    # Skip until the workspace is materialised per §6 of the spec.
+    if: hashFiles('crates/cargo-diff-risk/Cargo.toml') != ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # full history needed for diff base resolution
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build & install cargo-diff-risk
+        run: cargo install --path crates/cargo-diff-risk --locked --debug
+
+      - name: Resolve diff base
+        id: base
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          echo "base=${BASE:-origin/main}" >> "$GITHUB_OUTPUT"
+          echo "head=${HEAD:-HEAD}" >> "$GITHUB_OUTPUT"
+
+      - name: Run cargo-diff-risk (SARIF)
+        id: sarif
+        run: |
+          cargo diff-risk \
+            --base "${{ steps.base.outputs.base }}" \
+            --head "${{ steps.base.outputs.head }}" \
+            --baseline .diff-risk-baseline.json \
+            --format=sarif \
+            --threshold "${{ inputs.threshold || '7' }}" \
+            > diff-risk.sarif || echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: diff-risk.sarif
+          category: diff-risk
+
+      - name: Run cargo-diff-risk (pretty, for logs)
+        if: always()
+        run: |
+          cargo diff-risk \
+            --base "${{ steps.base.outputs.base }}" \
+            --head "${{ steps.base.outputs.head }}" \
+            --baseline .diff-risk-baseline.json \
+            --format=pretty || true
+
+      - name: Generate LLM remediation prompt
+        if: always()
+        run: |
+          cargo diff-risk \
+            --base "${{ steps.base.outputs.base }}" \
+            --head "${{ steps.base.outputs.head }}" \
+            --baseline .diff-risk-baseline.json \
+            --format=llm-prompt \
+            --threshold "${{ inputs.threshold || '7' }}" \
+            > diff-risk-prompt.md || true
+
+      - name: Upload artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diff-risk-report
+          path: |
+            diff-risk.sarif
+            diff-risk-prompt.md
+          retention-days: 14
+
+      - name: Comment report on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: diff-risk
+          path: diff-risk-prompt.md
+
+      - name: Enforce threshold
+        if: steps.sarif.outputs.exit == '1'
+        run: |
+          echo "::error::diff-risk score exceeded threshold ${{ inputs.threshold || '7' }}"
+          exit 1
