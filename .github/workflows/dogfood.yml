@@ -30,7 +30,7 @@ jobs:
     # Skip until the workspace is materialised per §6 of the spec.
     if: hashFiles('crates/cargo-diff-risk/Cargo.toml') != ''
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0      # full history needed for diff base resolution
 
