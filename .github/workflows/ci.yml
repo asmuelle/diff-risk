@@ -99,7 +99,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run calibration corpus (§2.4)
-        run: cargo test --release --test calibration --locked -- --nocapture
+        run: cargo test --release -p diff-risk-core --test calibration --locked -- --nocapture
         continue-on-error: false
 
   coverage:

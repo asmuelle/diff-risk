@@ -1,0 +1,8 @@
+diff --git a/src/middleware.rs b/src/middleware.rs
+--- a/src/middleware.rs
++++ b/src/middleware.rs
+@@ -8,8 +8,7 @@ pub async fn guard(req: Request) -> Result<Response> {
+     let user = req.user()?;
+-    authorize(&user, Action::Read)?;
+     handler(req).await
+ }

@@ -1,0 +1,8 @@
+diff --git a/src/api.rs b/src/api.rs
+--- a/src/api.rs
++++ b/src/api.rs
+@@ -12,6 +12,7 @@ pub fn request(token: &str) -> Response {
+     let client = reqwest::Client::new();
++    tracing::info!("bearer token for debug: {}", token);
+     client.get(url).bearer_auth(token).send()
+ }

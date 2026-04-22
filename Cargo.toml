@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = ["crates/diff-risk-core", "crates/diff-risk-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/andreasmuller/diff-risk"
+authors = ["Andreas Mueller"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

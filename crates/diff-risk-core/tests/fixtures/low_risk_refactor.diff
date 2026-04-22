@@ -1,0 +1,13 @@
+diff --git a/src/utils.rs b/src/utils.rs
+--- a/src/utils.rs
++++ b/src/utils.rs
+@@ -3,6 +3,6 @@ pub fn greet(name: &str) -> String {
+-    let mut s = String::new();
+-    s.push_str("Hello, ");
+-    s.push_str(name);
+-    s
++    let mut buf = String::with_capacity(8 + name.len());
++    buf.push_str("Hello, ");
++    buf.push_str(name);
++    buf
+ }
