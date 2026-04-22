@@ -98,7 +98,7 @@ jobs:
 
       - name: Comment report on PR
         if: github.event_name == 'pull_request' && always()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: diff-risk
           path: diff-risk-prompt.md
