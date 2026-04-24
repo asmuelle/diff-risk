@@ -1,0 +1,11 @@
+diff --git a/src/buffer.rs b/src/buffer.rs
+--- a/src/buffer.rs
++++ b/src/buffer.rs
+@@ -4,5 +4,8 @@ pub struct Buffer {
+ }
+
+ impl Buffer {
++    pub fn peek(&self, idx: usize) -> u8 {
++        unsafe { *self.ptr.add(idx) }
++    }
+ }

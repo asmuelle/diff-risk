@@ -10,6 +10,7 @@ use crate::report::Finding;
 
 pub mod async_boundary;
 pub mod auth;
+pub mod concurrency;
 
 /// A detector inspects a parsed diff and produces zero or more findings.
 pub trait Detector: Send + Sync {

@@ -50,6 +50,13 @@ const EXPECTATIONS: &[Expectation] = &[
         expect_findings: 1,
         note: "logging a bearer token — critical-ish",
     },
+    Expectation {
+        fixture: "unsafe_ptr_deref_added.diff",
+        min_score: 7.0,
+        max_score: 10.0,
+        expect_findings: 1,
+        note: "unsafe pointer deref added — concurrency/memory-safety Critical",
+    },
 ];
 
 #[test]
