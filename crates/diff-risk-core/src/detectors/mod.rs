@@ -8,9 +8,11 @@
 use crate::diff::Diff;
 use crate::report::Finding;
 
+pub mod api_contract;
 pub mod async_boundary;
 pub mod auth;
 pub mod concurrency;
+pub mod serde_drift;
 
 /// A detector inspects a parsed diff and produces zero or more findings.
 pub trait Detector: Send + Sync {

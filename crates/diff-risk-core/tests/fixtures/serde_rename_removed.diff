@@ -1,0 +1,9 @@
+diff --git a/src/dto.rs b/src/dto.rs
+--- a/src/dto.rs
++++ b/src/dto.rs
+@@ -1,5 +1,4 @@
+ pub struct User {
+     pub name: String,
+-    #[serde(rename = "user_id")]
+     pub id: u64,
+ }

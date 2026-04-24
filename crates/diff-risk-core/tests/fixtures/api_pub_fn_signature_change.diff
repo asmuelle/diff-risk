@@ -1,0 +1,8 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,4 +1,4 @@
+ pub mod types;
+
+-pub fn find_user(id: u32) -> Option<User> { None }
++pub fn find_user(id: u64) -> Option<User> { None }

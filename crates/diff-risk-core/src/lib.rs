@@ -14,8 +14,8 @@ pub mod report;
 pub mod scoring;
 
 pub use detectors::{
-    async_boundary::AsyncBoundaryDetector, auth::AuthDetector, concurrency::ConcurrencyDetector,
-    Detector,
+    api_contract::ApiContractDetector, async_boundary::AsyncBoundaryDetector, auth::AuthDetector,
+    concurrency::ConcurrencyDetector, serde_drift::SerdeDriftDetector, Detector,
 };
 pub use diff::{parse_unified_diff, ChangedHunk, Diff, DiffError};
 pub use report::{Finding, RiskCategory, RiskReport, Severity};
@@ -42,8 +42,10 @@ pub fn analyze_with(diff: &Diff, detectors: &[Box<dyn Detector>]) -> RiskReport 
 #[must_use]
 pub fn default_detectors() -> Vec<Box<dyn Detector>> {
     vec![
-        Box::new(AuthDetector::new()),
+        Box::new(ApiContractDetector::new()),
         Box::new(AsyncBoundaryDetector::new()),
+        Box::new(AuthDetector::new()),
         Box::new(ConcurrencyDetector::new()),
+        Box::new(SerdeDriftDetector::new()),
     ]
 }

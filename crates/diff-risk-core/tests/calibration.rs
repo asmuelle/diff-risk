@@ -40,8 +40,8 @@ const EXPECTATIONS: &[Expectation] = &[
         fixture: "jwt_middleware_added.diff",
         min_score: 7.0,
         max_score: 10.0,
-        expect_findings: 1,
-        note: "new JWT handler must fire critical",
+        expect_findings: 2,
+        note: "new JWT handler — auth Critical + api-contract Medium for the pub fn",
     },
     Expectation {
         fixture: "token_leak_log.diff",
@@ -54,8 +54,22 @@ const EXPECTATIONS: &[Expectation] = &[
         fixture: "unsafe_ptr_deref_added.diff",
         min_score: 7.0,
         max_score: 10.0,
+        expect_findings: 2,
+        note: "unsafe pointer deref — concurrency Critical + api-contract Medium for pub fn",
+    },
+    Expectation {
+        fixture: "api_pub_fn_signature_change.diff",
+        min_score: 1.0,
+        max_score: 5.0,
+        expect_findings: 2,
+        note: "pub fn return-type change — one Medium per side (removed + added)",
+    },
+    Expectation {
+        fixture: "serde_rename_removed.diff",
+        min_score: 2.0,
+        max_score: 7.0,
         expect_findings: 1,
-        note: "unsafe pointer deref added — concurrency/memory-safety Critical",
+        note: "removed `#[serde(rename = …)]` — field reverts to Rust ident on the wire",
     },
 ];
 
