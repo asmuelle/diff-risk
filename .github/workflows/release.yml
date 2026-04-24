@@ -179,13 +179,34 @@ jobs:
         run: |
           set -euo pipefail
           # Current scaffold: diff-risk-core (lib) → diff-risk-cli (bin `diff-risk`)
+          # Each crate is published only if its exact version isn't already on
+          # crates.io — makes re-runs on the same tag idempotent and lets
+          # partial-failure retries skip what's already uploaded.
           for crate in \
             diff-risk-core \
             diff-risk-cli
           do
-            echo "::group::publish $crate"
-            cargo publish -p "$crate" --locked
-            # Give the index time to update before the next dependent crate
-            sleep 20
+            version=$(cargo metadata --format-version=1 --no-deps \
+              | jq -er --arg name "$crate" \
+                '.packages[] | select(.name==$name) | .version')
+            echo "::group::publish $crate v$version"
+            url="https://crates.io/api/v1/crates/$crate/$version"
+            code=$(curl -sS -o /dev/null -w '%{http_code}' \
+              -A "diff-risk-ci (+https://github.com/${GITHUB_REPOSITORY})" \
+              "$url")
+            case "$code" in
+              200)
+                echo "$crate@$version already on crates.io — skipping"
+                ;;
+              404)
+                cargo publish -p "$crate" --locked
+                # Give the index time to update before the next dependent crate
+                sleep 20
+                ;;
+              *)
+                echo "::error::Unexpected HTTP $code from $url while probing existence" >&2
+                exit 1
+                ;;
+            esac
             echo "::endgroup::"
           done
