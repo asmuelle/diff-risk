@@ -8,6 +8,7 @@
 use crate::diff::Diff;
 use crate::report::Finding;
 
+pub mod async_boundary;
 pub mod auth;
 
 /// A detector inspects a parsed diff and produces zero or more findings.

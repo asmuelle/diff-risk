@@ -13,7 +13,7 @@ pub mod diff;
 pub mod report;
 pub mod scoring;
 
-pub use detectors::{auth::AuthDetector, Detector};
+pub use detectors::{async_boundary::AsyncBoundaryDetector, auth::AuthDetector, Detector};
 pub use diff::{parse_unified_diff, ChangedHunk, Diff, DiffError};
 pub use report::{Finding, RiskCategory, RiskReport, Severity};
 pub use scoring::score_findings;
@@ -35,8 +35,11 @@ pub fn analyze_with(diff: &Diff, detectors: &[Box<dyn Detector>]) -> RiskReport 
     RiskReport { findings, score }
 }
 
-/// The detector suite applied by [`analyze`] — currently only the auth-gate detector.
+/// The detector suite applied by [`analyze`].
 #[must_use]
 pub fn default_detectors() -> Vec<Box<dyn Detector>> {
-    vec![Box::new(AuthDetector::new())]
+    vec![
+        Box::new(AuthDetector::new()),
+        Box::new(AsyncBoundaryDetector::new()),
+    ]
 }
