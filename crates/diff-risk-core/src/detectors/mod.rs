@@ -1,5 +1,5 @@
 //! Detector plug-ins. Each detector inspects a [`Diff`] and emits
-//! [`Finding`](crate::report::Finding)s.
+//! [`Finding`]s.
 //!
 //! The trait is object-safe and intentionally small — one method,
 //! one input, one output — so new detectors (async-boundary, serde-drift,
