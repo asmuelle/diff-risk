@@ -6,12 +6,14 @@
 //! and the score meets or exceeds it — designed for CI gating.
 
 use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use diff_risk_core::{
-    analyze, parse_unified_diff, scoring::exceeds, Finding, RiskReport, Severity,
+    analyze_with, default_detectors, parse_unified_diff, scoring::exceeds, ConfigDetector,
+    Detector, Finding, RiskReport, Severity,
 };
 
 /// Semantic risk scoring for Rust diffs.
@@ -54,7 +56,8 @@ fn run() -> Result<ExitCode> {
         .context("failed to read diff from stdin")?;
 
     let diff = parse_unified_diff(&input).context("failed to parse unified diff")?;
-    let report = analyze(&diff);
+    let detectors = detectors_for_root(&std::env::current_dir().context("failed to read cwd")?)?;
+    let report = analyze_with(&diff, &detectors);
 
     if cli.quiet {
         println!("{:.1}", report.score);
@@ -69,6 +72,35 @@ fn run() -> Result<ExitCode> {
     }
 
     Ok(ExitCode::SUCCESS)
+}
+
+fn detectors_for_root(root: &Path) -> Result<Vec<Box<dyn Detector>>> {
+    let mut detectors = default_detectors();
+    if let Some(config_detector) = load_config_detector(root)? {
+        detectors.push(Box::new(config_detector));
+    }
+    Ok(detectors)
+}
+
+fn load_config_detector(root: &Path) -> Result<Option<ConfigDetector>> {
+    for path in detector_config_candidates(root) {
+        if !path.exists() {
+            continue;
+        }
+        let contents = std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        match ConfigDetector::from_toml_str(&contents)
+            .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?
+        {
+            Some(detector) => return Ok(Some(detector)),
+            None => continue,
+        }
+    }
+    Ok(None)
+}
+
+fn detector_config_candidates(root: &Path) -> [PathBuf; 2] {
+    [root.join(".cargo-vibe.toml"), root.join("detectors.toml")]
 }
 
 fn print_report(report: &RiskReport) {

@@ -21,8 +21,8 @@
 use regex::Regex;
 use std::sync::OnceLock;
 
-use crate::detectors::Detector;
 use crate::detectors::brace_depth;
+use crate::detectors::Detector;
 use crate::diff::{AddedLine, Diff};
 use crate::report::{Finding, RiskCategory, Severity};
 
@@ -101,19 +101,24 @@ impl Detector for ConcurrencyDetector {
                 .map(|a| (a.line, a.text.clone()))
                 .collect();
             let has_multi_line = brace_depth::has_multi_line_unsafe(&added_pairs);
-            
+
             for added in &hunk.added {
                 let text = &added.text;
                 let is_unsafe_line = unsafe_re().is_match(text);
                 if is_unsafe_line || (has_multi_line && text.trim() == "{") {
                     // Avoid double-firing when both single-line and multi-line match
-                    if is_unsafe_line || !findings.iter().any(|f: &Finding| {
-                        f.line == Some(added.line)
-                            && f.file == hunk.path
-                            && f.message.contains("unsafe code")
-                    }) {
+                    if is_unsafe_line
+                        || !findings.iter().any(|f: &Finding| {
+                            f.line == Some(added.line)
+                                && f.file == hunk.path
+                                && f.message.contains("unsafe code")
+                        })
+                    {
                         let msg = if has_multi_line && !is_unsafe_line {
-                            format!("unsafe block continued from previous line: {}", truncate(text, 120))
+                            format!(
+                                "unsafe block continued from previous line: {}",
+                                truncate(text, 120)
+                            )
                         } else {
                             format!("unsafe code introduced: {}", truncate(text, 120))
                         };

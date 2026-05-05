@@ -9,20 +9,27 @@ use crate::diff::Diff;
 /// Track brace depth across consecutive added lines in a file hunk.
 /// Returns the depth after each line: `Vec<(AddedLine, depth_at_end)>`.
 pub fn brace_depth_per_added_line(diff: &Diff) -> Vec<(&str, Vec<(u32, usize)>)> {
-    diff.hunks.iter().map(|hunk| {
-        let mut depth = 0usize;
-        let depths: Vec<(u32, usize)> = hunk.added.iter().map(|added| {
-            for ch in added.text.chars() {
-                match ch {
-                    '{' => depth += 1,
-                    '}' => depth = depth.saturating_sub(1),
-                    _ => {}
-                }
-            }
-            (added.line, depth)
-        }).collect();
-        (hunk.path.as_str(), depths)
-    }).collect()
+    diff.hunks
+        .iter()
+        .map(|hunk| {
+            let mut depth = 0usize;
+            let depths: Vec<(u32, usize)> = hunk
+                .added
+                .iter()
+                .map(|added| {
+                    for ch in added.text.chars() {
+                        match ch {
+                            '{' => depth += 1,
+                            '}' => depth = depth.saturating_sub(1),
+                            _ => {}
+                        }
+                    }
+                    (added.line, depth)
+                })
+                .collect();
+            (hunk.path.as_str(), depths)
+        })
+        .collect()
 }
 
 /// Check if an `unsafe` keyword appears in a line and is followed by
@@ -34,12 +41,12 @@ pub fn has_multi_line_unsafe(added_lines: &[(u32, String)]) -> bool {
     let mut pending_unsafe = false;
     for (_line, text) in added_lines {
         let trimmed = text.trim();
-        
+
         if trimmed == "unsafe" {
             pending_unsafe = true;
             continue;
         }
-        
+
         if pending_unsafe {
             if trimmed.starts_with('{') || trimmed.contains("unsafe {") {
                 return true;
@@ -50,7 +57,7 @@ pub fn has_multi_line_unsafe(added_lines: &[(u32, String)]) -> bool {
                 pending_unsafe = false;
             }
         }
-        
+
         // Also catch same-line `unsafe {`
         if trimmed.contains("unsafe {") {
             return true;
@@ -76,9 +83,7 @@ mod tests {
 
     #[test]
     fn single_line_unsafe_detected() {
-        let lines = vec![
-            (1u32, "unsafe { *ptr }".to_string()),
-        ];
+        let lines = vec![(1u32, "unsafe { *ptr }".to_string())];
         assert!(has_multi_line_unsafe(&lines));
     }
 

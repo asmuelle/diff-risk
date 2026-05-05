@@ -42,20 +42,11 @@ pub fn analyze_with(diff: &Diff, detectors: &[Box<dyn Detector>]) -> RiskReport 
 /// The detector suite applied by [`analyze`].
 #[must_use]
 pub fn default_detectors() -> Vec<Box<dyn Detector>> {
-    let mut detectors: Vec<Box<dyn Detector>> = vec![
+    vec![
         Box::new(ApiContractDetector::new()),
         Box::new(AsyncBoundaryDetector::new()),
         Box::new(AuthDetector::new()),
         Box::new(ConcurrencyDetector::new()),
         Box::new(SerdeDriftDetector::new()),
-    ];
-
-    // Add custom detectors from .cargo-vibe.toml if present
-    if let Some(config_detector) = ConfigDetector::from_vibe_config(
-        &std::env::current_dir().unwrap_or_default(),
-    ) {
-        detectors.push(Box::new(config_detector));
-    }
-
-    detectors
+    ]
 }

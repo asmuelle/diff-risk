@@ -24,7 +24,6 @@
 
 use regex::Regex;
 use serde::Deserialize;
-use std::path::Path;
 
 use crate::detectors::Detector;
 use crate::diff::Diff;
@@ -55,11 +54,21 @@ pub struct DetectorRule {
     pub added_only: bool,
 }
 
-fn default_category() -> String { "other".to_string() }
-fn default_severity() -> String { "medium".to_string() }
-fn default_message() -> String { "Custom pattern matched: {line}".to_string() }
-fn default_true() -> bool { true }
-fn default_false() -> bool { false }
+fn default_category() -> String {
+    "other".to_string()
+}
+fn default_severity() -> String {
+    "medium".to_string()
+}
+fn default_message() -> String {
+    "Custom pattern matched: {line}".to_string()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_false() -> bool {
+    false
+}
 
 /// Wrapper for TOML deserialization of detector rules.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -94,36 +103,36 @@ impl ConfigDetector {
     /// # Errors
     /// Returns a string error for invalid regex patterns or unknown severity/category values.
     pub fn from_rules(rules: Vec<DetectorRule>) -> Result<Self, String> {
-        let compiled: Result<Vec<CompiledRule>, String> = rules.into_iter().map(|rule| {
-            let pattern = Regex::new(&rule.pattern)
-                .map_err(|e| format!("invalid regex in rule '{}': {e}", rule.name))?;
-            let severity = parse_severity(&rule.severity)?;
-            let category = parse_category(&rule.category)?;
-            Ok(CompiledRule {
-                name: rule.name,
-                category,
-                severity,
-                pattern,
-                message_template: rule.message,
-                scan_removed: rule.scan_removed,
-                added_only: rule.added_only,
+        let compiled: Result<Vec<CompiledRule>, String> = rules
+            .into_iter()
+            .map(|rule| {
+                let pattern = Regex::new(&rule.pattern)
+                    .map_err(|e| format!("invalid regex in rule '{}': {e}", rule.name))?;
+                let severity = parse_severity(&rule.severity)?;
+                let category = parse_category(&rule.category)?;
+                Ok(CompiledRule {
+                    name: rule.name,
+                    category,
+                    severity,
+                    pattern,
+                    message_template: rule.message,
+                    scan_removed: rule.scan_removed,
+                    added_only: rule.added_only,
+                })
             })
-        }).collect();
+            .collect();
         Ok(Self {
             name: "config-detector",
             rules: compiled?,
         })
     }
 
-    /// Load and create detectors from a `.cargo-vibe.toml` file.
-    pub fn from_vibe_config(root: &Path) -> Option<Self> {
-        let config_path = find_config_file(root)?;
-        let contents = std::fs::read_to_string(&config_path).ok()?;
-        Self::from_toml_str(&contents)
-    }
-
     /// Parse TOML config string into detectors.
-    fn from_toml_str(toml_str: &str) -> Option<Self> {
+    ///
+    /// Returns `Ok(None)` when the TOML is valid but defines no custom
+    /// detectors. Invalid TOML, invalid detector fields, and invalid regexes
+    /// are returned as errors so callers can fail closed.
+    pub fn from_toml_str(toml_str: &str) -> Result<Option<Self>, String> {
         // Try parsing the full vibe config first, then fall back to bare detectors
         #[derive(Deserialize)]
         struct VibeConfig {
@@ -136,36 +145,35 @@ impl ConfigDetector {
         }
 
         // Try full vibe config
-        if let Ok(config) = toml::from_str::<VibeConfig>(toml_str) {
-            if let Some(section) = config.diff_risk {
+        let full_config = toml::from_str::<VibeConfig>(toml_str);
+        if let Ok(config) = full_config.as_ref() {
+            if let Some(section) = &config.diff_risk {
                 if !section.detectors.is_empty() {
-                    return ConfigDetector::from_rules(section.detectors).ok();
+                    return ConfigDetector::from_rules(section.detectors.clone()).map(Some);
                 }
             }
         }
 
         // Try bare detectors format
-        if let Ok(rules) = toml::from_str::<DetectorsConfig>(toml_str) {
-            if !rules.detectors.is_empty() {
-                return ConfigDetector::from_rules(rules.detectors).ok();
+        match toml::from_str::<DetectorsConfig>(toml_str) {
+            Ok(rules) => {
+                if rules.detectors.is_empty() {
+                    Ok(None)
+                } else {
+                    ConfigDetector::from_rules(rules.detectors).map(Some)
+                }
+            }
+            Err(bare_err) => {
+                let detail = match full_config {
+                    Ok(_) => bare_err.to_string(),
+                    Err(full_err) => {
+                        format!("{full_err}; also failed as bare detectors config: {bare_err}")
+                    }
+                };
+                Err(format!("invalid custom detector config: {detail}"))
             }
         }
-
-        None
     }
-}
-
-fn find_config_file(root: &Path) -> Option<std::path::PathBuf> {
-    let candidates = [
-        root.join(".cargo-vibe.toml"),
-        root.join("detectors.toml"),
-    ];
-    for path in &candidates {
-        if path.exists() {
-            return Some(path.clone());
-        }
-    }
-    None
 }
 
 fn parse_severity(s: &str) -> Result<Severity, String> {
@@ -174,7 +182,9 @@ fn parse_severity(s: &str) -> Result<Severity, String> {
         "medium" => Ok(Severity::Medium),
         "high" => Ok(Severity::High),
         "critical" => Ok(Severity::Critical),
-        other => Err(format!("unknown severity '{other}' — use low, medium, high, or critical")),
+        other => Err(format!(
+            "unknown severity '{other}' — use low, medium, high, or critical"
+        )),
     }
 }
 
@@ -203,7 +213,9 @@ impl Detector for ConfigDetector {
                 // Scan added lines
                 for added in &hunk.added {
                     if rule.pattern.is_match(&added.text) {
-                        let msg = rule.message_template.replace("{line}", &truncate(&added.text, 120));
+                        let msg = rule
+                            .message_template
+                            .replace("{line}", &truncate(&added.text, 120));
                         findings.push(Finding {
                             category: rule.category,
                             severity: rule.severity,
@@ -218,7 +230,9 @@ impl Detector for ConfigDetector {
                 if rule.scan_removed && !rule.added_only {
                     for removed in &hunk.removed {
                         if rule.pattern.is_match(removed) {
-                            let msg = rule.message_template.replace("{line}", &truncate(removed, 120));
+                            let msg = rule
+                                .message_template
+                                .replace("{line}", &truncate(removed, 120));
                             findings.push(Finding {
                                 category: rule.category,
                                 severity: rule.severity,
@@ -261,7 +275,7 @@ severity = "high"
 pattern = '\.execute\s*\('
 message = "Raw SQL execution found"
 "#;
-        let detector = ConfigDetector::from_toml_str(toml).unwrap();
+        let detector = ConfigDetector::from_toml_str(toml).unwrap().unwrap();
         assert_eq!(detector.rules.len(), 1);
         assert_eq!(detector.rules[0].name, "sql-raw-query");
         assert_eq!(detector.rules[0].severity, Severity::High);
@@ -280,9 +294,20 @@ severity = "critical"
 pattern = 'SECRET_KEY'
 message = "Secret key detected"
 "#;
-        let detector = ConfigDetector::from_toml_str(toml).unwrap();
+        let detector = ConfigDetector::from_toml_str(toml).unwrap().unwrap();
         assert_eq!(detector.rules.len(), 1);
         assert_eq!(detector.rules[0].severity, Severity::Critical);
+    }
+
+    #[test]
+    fn invalid_rule_regex_is_reported() {
+        let toml = r#"
+[[detectors]]
+name = "bad-regex"
+pattern = '['
+"#;
+        let err = ConfigDetector::from_toml_str(toml).unwrap_err();
+        assert!(err.contains("invalid regex"));
     }
 
     #[test]
@@ -294,7 +319,7 @@ category = "other"
 severity = "high"
 pattern = 'dangerous_function\('
 "#;
-        let detector = ConfigDetector::from_toml_str(toml).unwrap();
+        let detector = ConfigDetector::from_toml_str(toml).unwrap().unwrap();
 
         let diff_str = "\
 --- a/src/lib.rs
@@ -320,7 +345,7 @@ category = "api_contract"
 severity = "critical"
 pattern = 'pub fn removed_func'
 "#;
-        let detector = ConfigDetector::from_toml_str(toml).unwrap();
+        let detector = ConfigDetector::from_toml_str(toml).unwrap().unwrap();
 
         let diff_str = "\
 --- a/src/lib.rs
@@ -346,7 +371,7 @@ pattern = 'pub fn'
 added_only = true
 scan_removed = false
 "#;
-        let detector = ConfigDetector::from_toml_str(toml).unwrap();
+        let detector = ConfigDetector::from_toml_str(toml).unwrap().unwrap();
 
         let diff_str = "\
 --- a/src/lib.rs
