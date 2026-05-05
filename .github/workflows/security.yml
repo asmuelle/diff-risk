@@ -51,12 +51,24 @@ jobs:
   supply-chain:
     name: cargo-vet (supply chain)
     runs-on: ubuntu-latest
-    if: hashFiles('supply-chain/config.toml') != ''
     steps:
       - uses: actions/checkout@v6
+      - name: Check cargo-vet config
+        id: vet_config
+        run: |
+          if [[ -f supply-chain/config.toml ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "supply-chain/config.toml is absent; skipping cargo-vet."
+          fi
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.vet_config.outputs.present == 'true'
       - uses: Swatinem/rust-cache@v2
+        if: steps.vet_config.outputs.present == 'true'
       - uses: taiki-e/install-action@v2
+        if: steps.vet_config.outputs.present == 'true'
         with:
           tool: cargo-vet
       - run: cargo vet --locked
+        if: steps.vet_config.outputs.present == 'true'

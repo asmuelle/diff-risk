@@ -27,20 +27,32 @@ jobs:
   risk:
     name: Score PR diff
     runs-on: ubuntu-latest
-    # Skip until the workspace is materialised per §6 of the spec.
-    if: hashFiles('crates/cargo-diff-risk/Cargo.toml') != ''
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0      # full history needed for diff base resolution
 
+      - name: Check dogfood crate
+        id: dogfood
+        run: |
+          if [[ -f crates/cargo-diff-risk/Cargo.toml ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "crates/cargo-diff-risk is not materialised yet; skipping dogfood run."
+          fi
+
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.dogfood.outputs.present == 'true'
       - uses: Swatinem/rust-cache@v2
+        if: steps.dogfood.outputs.present == 'true'
 
       - name: Build & install cargo-diff-risk
+        if: steps.dogfood.outputs.present == 'true'
         run: cargo install --path crates/cargo-diff-risk --locked --debug
 
       - name: Resolve diff base
+        if: steps.dogfood.outputs.present == 'true'
         id: base
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
@@ -49,6 +61,7 @@ jobs:
           echo "head=${HEAD:-HEAD}" >> "$GITHUB_OUTPUT"
 
       - name: Run cargo-diff-risk (SARIF)
+        if: steps.dogfood.outputs.present == 'true'
         id: sarif
         run: |
           cargo diff-risk \
@@ -60,14 +73,14 @@ jobs:
             > diff-risk.sarif || echo "exit=$?" >> "$GITHUB_OUTPUT"
 
       - name: Upload SARIF to Code Scanning
-        if: always()
+        if: steps.dogfood.outputs.present == 'true' && always()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: diff-risk.sarif
           category: diff-risk
 
       - name: Run cargo-diff-risk (pretty, for logs)
-        if: always()
+        if: steps.dogfood.outputs.present == 'true' && always()
         run: |
           cargo diff-risk \
             --base "${{ steps.base.outputs.base }}" \
@@ -76,7 +89,7 @@ jobs:
             --format=pretty || true
 
       - name: Generate LLM remediation prompt
-        if: always()
+        if: steps.dogfood.outputs.present == 'true' && always()
         run: |
           cargo diff-risk \
             --base "${{ steps.base.outputs.base }}" \
@@ -87,7 +100,7 @@ jobs:
             > diff-risk-prompt.md || true
 
       - name: Upload artefacts
-        if: always()
+        if: steps.dogfood.outputs.present == 'true' && always()
         uses: actions/upload-artifact@v7
         with:
           name: diff-risk-report
@@ -97,14 +110,14 @@ jobs:
           retention-days: 14
 
       - name: Comment report on PR
-        if: github.event_name == 'pull_request' && always()
+        if: steps.dogfood.outputs.present == 'true' && github.event_name == 'pull_request' && always()
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: diff-risk
           path: diff-risk-prompt.md
 
       - name: Enforce threshold
-        if: steps.sarif.outputs.exit == '1'
+        if: steps.dogfood.outputs.present == 'true' && steps.sarif.outputs.exit == '1'
         run: |
           echo "::error::diff-risk score exceeded threshold ${{ inputs.threshold || '7' }}"
           exit 1
