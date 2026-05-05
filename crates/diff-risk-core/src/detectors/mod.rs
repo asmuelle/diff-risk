@@ -11,6 +11,8 @@ use crate::report::Finding;
 pub mod api_contract;
 pub mod async_boundary;
 pub mod auth;
+pub mod brace_depth;
+pub mod config_detector;
 pub mod concurrency;
 pub mod serde_drift;
 

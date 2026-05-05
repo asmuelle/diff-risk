@@ -22,6 +22,7 @@ use regex::Regex;
 use std::sync::OnceLock;
 
 use crate::detectors::Detector;
+use crate::detectors::brace_depth;
 use crate::diff::{AddedLine, Diff};
 use crate::report::{Finding, RiskCategory, Severity};
 
@@ -93,7 +94,38 @@ impl Detector for ConcurrencyDetector {
     fn detect(&self, diff: &Diff) -> Vec<Finding> {
         let mut findings = Vec::new();
         for hunk in &diff.hunks {
+            // Check for multi-line unsafe blocks first
+            let added_pairs: Vec<(u32, String)> = hunk
+                .added
+                .iter()
+                .map(|a| (a.line, a.text.clone()))
+                .collect();
+            let has_multi_line = brace_depth::has_multi_line_unsafe(&added_pairs);
+            
             for added in &hunk.added {
+                let text = &added.text;
+                let is_unsafe_line = unsafe_re().is_match(text);
+                if is_unsafe_line || (has_multi_line && text.trim() == "{") {
+                    // Avoid double-firing when both single-line and multi-line match
+                    if is_unsafe_line || !findings.iter().any(|f: &Finding| {
+                        f.line == Some(added.line)
+                            && f.file == hunk.path
+                            && f.message.contains("unsafe code")
+                    }) {
+                        let msg = if has_multi_line && !is_unsafe_line {
+                            format!("unsafe block continued from previous line: {}", truncate(text, 120))
+                        } else {
+                            format!("unsafe code introduced: {}", truncate(text, 120))
+                        };
+                        findings.push(Finding {
+                            category: RiskCategory::Concurrency,
+                            severity: Severity::Critical,
+                            file: hunk.path.clone(),
+                            line: Some(added.line),
+                            message: msg,
+                        });
+                    }
+                }
                 findings.extend(scan_added_line(&hunk.path, added));
             }
         }
@@ -104,16 +136,6 @@ impl Detector for ConcurrencyDetector {
 fn scan_added_line(path: &str, added: &AddedLine) -> Vec<Finding> {
     let mut out = Vec::new();
     let text = &added.text;
-
-    if unsafe_re().is_match(text) {
-        out.push(Finding {
-            category: RiskCategory::Concurrency,
-            severity: Severity::Critical,
-            file: path.to_string(),
-            line: Some(added.line),
-            message: format!("unsafe code introduced: {}", truncate(text, 120)),
-        });
-    }
 
     if transmute_re().is_match(text) {
         out.push(Finding {
