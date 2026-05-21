@@ -178,6 +178,12 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
+
+          if [[ -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
+            echo "CARGO_REGISTRY_TOKEN is not set — skipping crates.io publish."
+            exit 0
+          fi
+
           # Current scaffold: diff-risk-core (lib) → diff-risk-cli (bin `diff-risk`)
           # Each crate is published only if its exact version isn't already on
           # crates.io — makes re-runs on the same tag idempotent and lets
